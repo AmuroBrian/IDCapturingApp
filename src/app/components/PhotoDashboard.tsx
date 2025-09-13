@@ -1,8 +1,8 @@
-'use client';
+"use client";
 
-import { useState, useEffect } from 'react';
-import { supabase, PHOTOS_TABLE } from '../config/supabaseConfig';
-import { jsPDF } from 'jspdf';
+import { useState, useEffect } from "react";
+import { supabase, PHOTOS_TABLE } from "../config/supabaseConfig";
+import { jsPDF } from "jspdf";
 
 interface Photo {
   id: string;
@@ -31,11 +31,11 @@ export default function PhotoDashboard() {
     const fetchPhotos = async () => {
       const { data, error } = await supabase
         .from(PHOTOS_TABLE)
-        .select('*')
-        .order('created_at', { ascending: false });
+        .select("*")
+        .order("created_at", { ascending: false });
 
       if (error) {
-        console.error('Error fetching photos:', error);
+        console.error("Error fetching photos:", error);
         setLoading(false);
         return;
       }
@@ -48,19 +48,21 @@ export default function PhotoDashboard() {
 
     // Set up real-time subscription for new photos
     const subscription = supabase
-      .channel('photos_channel')
+      .channel("photos_channel")
       .on(
-        'postgres_changes',
+        "postgres_changes",
         {
-          event: '*',
-          schema: 'public',
-          table: PHOTOS_TABLE
+          event: "*",
+          schema: "public",
+          table: PHOTOS_TABLE,
         },
         (payload) => {
-          if (payload.eventType === 'INSERT') {
-            setPhotos(prev => [payload.new as Photo, ...prev]);
-          } else if (payload.eventType === 'DELETE') {
-            setPhotos(prev => prev.filter(photo => photo.id !== payload.old.id));
+          if (payload.eventType === "INSERT") {
+            setPhotos((prev) => [payload.new as Photo, ...prev]);
+          } else if (payload.eventType === "DELETE") {
+            setPhotos((prev) =>
+              prev.filter((photo) => photo.id !== payload.old.id)
+            );
           }
         }
       )
@@ -82,18 +84,94 @@ export default function PhotoDashboard() {
   };
 
   const selectAllPhotos = () => {
-    setSelectedPhotos(new Set(photos.map(photo => photo.id)));
+    setSelectedPhotos(new Set(photos.map((photo) => photo.id)));
   };
 
   const clearSelection = () => {
     setSelectedPhotos(new Set());
   };
 
+  const deletePhoto = async (photoId: string) => {
+    if (
+      !confirm(
+        "Are you sure you want to delete this photo? This action cannot be undone."
+      )
+    ) {
+      return;
+    }
+
+    try {
+      const { error } = await supabase
+        .from(PHOTOS_TABLE)
+        .delete()
+        .eq("id", photoId);
+
+      if (error) {
+        console.error("Error deleting photo:", error);
+        alert("Error deleting photo. Please try again.");
+        return;
+      }
+
+      // Remove from local state
+      setPhotos((prev) => prev.filter((photo) => photo.id !== photoId));
+      // Remove from selection if it was selected
+      setSelectedPhotos((prev) => {
+        const newSelection = new Set(prev);
+        newSelection.delete(photoId);
+        return newSelection;
+      });
+    } catch (error) {
+      console.error("Error deleting photo:", error);
+      alert("Error deleting photo. Please try again.");
+    }
+  };
+
+  const deleteSelectedPhotos = async () => {
+    if (selectedPhotos.size === 0) {
+      alert("Please select at least one photo to delete");
+      return;
+    }
+
+    if (
+      !confirm(
+        `Are you sure you want to delete ${selectedPhotos.size} selected photo(s)? This action cannot be undone.`
+      )
+    ) {
+      return;
+    }
+
+    try {
+      const photoIds = Array.from(selectedPhotos);
+      const { error } = await supabase
+        .from(PHOTOS_TABLE)
+        .delete()
+        .in("id", photoIds);
+
+      if (error) {
+        console.error("Error deleting photos:", error);
+        alert("Error deleting photos. Please try again.");
+        return;
+      }
+
+      // Remove from local state
+      setPhotos((prev) =>
+        prev.filter((photo) => !selectedPhotos.has(photo.id))
+      );
+      // Clear selection
+      setSelectedPhotos(new Set());
+    } catch (error) {
+      console.error("Error deleting photos:", error);
+      alert("Error deleting photos. Please try again.");
+    }
+  };
+
   const generatePDF = async (photoIds: string[]) => {
-    const selectedPhotoData = photos.filter(photo => photoIds.includes(photo.id));
-    
+    const selectedPhotoData = photos.filter((photo) =>
+      photoIds.includes(photo.id)
+    );
+
     if (selectedPhotoData.length === 0) {
-      alert('Please select at least one photo to generate PDF');
+      alert("Please select at least one photo to generate PDF");
       return;
     }
 
@@ -102,16 +180,16 @@ export default function PhotoDashboard() {
 
     for (let i = 0; i < selectedPhotoData.length; i++) {
       const photo = selectedPhotoData[i];
-      
+
       if (pageAdded) {
         pdf.addPage();
       }
-      
+
       try {
         // Create a temporary image element to get dimensions
         const img = new Image();
-        img.crossOrigin = 'anonymous';
-        
+        img.crossOrigin = "anonymous";
+
         await new Promise((resolve, reject) => {
           img.onload = resolve;
           img.onerror = reject;
@@ -122,8 +200,8 @@ export default function PhotoDashboard() {
         const pageWidth = pdf.internal.pageSize.getWidth();
         const pageHeight = pdf.internal.pageSize.getHeight();
         const margin = 20;
-        const maxWidth = pageWidth - (margin * 2);
-        const maxHeight = pageHeight - (margin * 3); // Extra margin for text
+        const maxWidth = pageWidth - margin * 2;
+        const maxHeight = pageHeight - margin * 3; // Extra margin for text
 
         let imgWidth = img.width;
         let imgHeight = img.height;
@@ -143,13 +221,13 @@ export default function PhotoDashboard() {
         const y = margin;
 
         // Add image to PDF
-        pdf.addImage(img, 'JPEG', x, y, imgWidth, imgHeight);
+        pdf.addImage(img, "JPEG", x, y, imgWidth, imgHeight);
 
         // Add filename and timestamp below image
         const textY = y + imgHeight + 10;
         pdf.setFontSize(10);
         pdf.text(`File: ${photo.filename}`, margin, textY);
-        
+
         if (photo.created_at) {
           const date = new Date(photo.created_at);
           pdf.text(`Date: ${date.toLocaleString()}`, margin, textY + 5);
@@ -162,22 +240,26 @@ export default function PhotoDashboard() {
     }
 
     // Save the PDF
-    const filename = `photos_${new Date().toISOString().slice(0, 10)}_${Date.now()}.pdf`;
+    const filename = `photos_${new Date()
+      .toISOString()
+      .slice(0, 10)}_${Date.now()}.pdf`;
     pdf.save(filename);
   };
 
   const printSelectedPhotos = async (photoIds: string[]) => {
-    const selectedPhotoData = photos.filter(photo => photoIds.includes(photo.id));
-    
+    const selectedPhotoData = photos.filter((photo) =>
+      photoIds.includes(photo.id)
+    );
+
     if (selectedPhotoData.length === 0) {
-      alert('Please select at least one photo to print');
+      alert("Please select at least one photo to print");
       return;
     }
 
     // Create a new window for printing
-    const printWindow = window.open('', '_blank');
+    const printWindow = window.open("", "_blank");
     if (!printWindow) {
-      alert('Please allow pop-ups to enable printing');
+      alert("Please allow pop-ups to enable printing");
       return;
     }
 
@@ -259,9 +341,9 @@ export default function PhotoDashboard() {
     for (let i = 0; i < selectedPhotoData.length; i += 2) {
       const photo1 = selectedPhotoData[i];
       const photo2 = selectedPhotoData[i + 1];
-      
+
       printContent += `<div class="photo-row">`;
-      
+
       // First photo in row
       printContent += `
         <div class="photo-item">
@@ -270,7 +352,7 @@ export default function PhotoDashboard() {
           </div>
         </div>
       `;
-      
+
       // Second photo in row (if exists)
       if (photo2) {
         printContent += `
@@ -291,7 +373,7 @@ export default function PhotoDashboard() {
           </div>
         `;
       }
-      
+
       printContent += `</div>`;
     }
 
@@ -317,37 +399,37 @@ export default function PhotoDashboard() {
 
   const generateDocumentPDF = async (documentData: DocumentData) => {
     const pdf = new jsPDF();
-    
+
     try {
       // Add title
       pdf.setFontSize(18);
-      pdf.text('Document Verification', 105, 20, { align: 'center' });
-      
+      pdf.text("Document Verification", 105, 20, { align: "center" });
+
       // Add timestamp
       pdf.setFontSize(10);
       const timestamp = new Date(documentData.timestamp).toLocaleString();
-      pdf.text(`Captured: ${timestamp}`, 105, 30, { align: 'center' });
-      
+      pdf.text(`Captured: ${timestamp}`, 105, 30, { align: "center" });
+
       // Add front side (top left)
       pdf.setFontSize(12);
-      pdf.text('Front Side', 20, 50);
-      
+      pdf.text("Front Side", 20, 50);
+
       const frontImg = new Image();
       await new Promise((resolve, reject) => {
         frontImg.onload = resolve;
         frontImg.onerror = reject;
         frontImg.src = documentData.front;
       });
-      
+
       // Calculate front image dimensions (smaller to fit side by side)
       const pageWidth = pdf.internal.pageSize.getWidth();
       const margin = 20;
-      const maxWidth = (pageWidth - (margin * 3)) / 2; // Half page width minus margins
+      const maxWidth = (pageWidth - margin * 3) / 2; // Half page width minus margins
       const maxHeight = 60;
-      
+
       let frontWidth = frontImg.width;
       let frontHeight = frontImg.height;
-      
+
       if (frontWidth > maxWidth) {
         frontHeight = (frontHeight * maxWidth) / frontWidth;
         frontWidth = maxWidth;
@@ -356,25 +438,25 @@ export default function PhotoDashboard() {
         frontWidth = (frontWidth * maxHeight) / frontHeight;
         frontHeight = maxHeight;
       }
-      
+
       // Position front image on left side
-      pdf.addImage(frontImg, 'JPEG', margin, 60, frontWidth, frontHeight);
-      
+      pdf.addImage(frontImg, "JPEG", margin, 60, frontWidth, frontHeight);
+
       // Add back side (top right)
       pdf.setFontSize(12);
-      pdf.text('Back Side', pageWidth - margin - 30, 50);
-      
+      pdf.text("Back Side", pageWidth - margin - 30, 50);
+
       const backImg = new Image();
       await new Promise((resolve, reject) => {
         backImg.onload = resolve;
         backImg.onerror = reject;
         backImg.src = documentData.back;
       });
-      
+
       // Calculate back image dimensions
       let backWidth = backImg.width;
       let backHeight = backImg.height;
-      
+
       if (backWidth > maxWidth) {
         backHeight = (backHeight * maxWidth) / backWidth;
         backWidth = maxWidth;
@@ -383,20 +465,20 @@ export default function PhotoDashboard() {
         backWidth = (backWidth * maxHeight) / backHeight;
         backHeight = maxHeight;
       }
-      
+
       // Position back image on right side
       const backX = pageWidth - margin - backWidth;
-      pdf.addImage(backImg, 'JPEG', backX, 60, backWidth, backHeight);
-      
+      pdf.addImage(backImg, "JPEG", backX, 60, backWidth, backHeight);
+
       // Add signature area below (centered, full width)
       pdf.setFontSize(12);
-      pdf.text('Signature:', 20, 140);
-      
+      pdf.text("Signature:", 20, 140);
+
       // Draw signature box
       pdf.setDrawColor(200, 200, 200);
       pdf.setLineWidth(0.5);
-      pdf.rect(margin, 150, pageWidth - (margin * 2), 40);
-      
+      pdf.rect(margin, 150, pageWidth - margin * 2, 40);
+
       // Add signature image if available
       if (documentData.signature) {
         const signatureImg = new Image();
@@ -405,12 +487,12 @@ export default function PhotoDashboard() {
           signatureImg.onerror = reject;
           signatureImg.src = documentData.signature;
         });
-        
+
         // Calculate signature dimensions to fit in box
         let sigWidth = signatureImg.width;
         let sigHeight = signatureImg.height;
-        
-        if (sigWidth > (pageWidth - margin * 2)) {
+
+        if (sigWidth > pageWidth - margin * 2) {
           sigHeight = (sigHeight * (pageWidth - margin * 2)) / sigWidth;
           sigWidth = pageWidth - margin * 2;
         }
@@ -418,33 +500,38 @@ export default function PhotoDashboard() {
           sigWidth = (sigWidth * 35) / sigHeight;
           sigHeight = 35;
         }
-        
+
         // Center signature in the box
         const sigX = (pageWidth - sigWidth) / 2;
         const sigY = 150 + (40 - sigHeight) / 2;
-        pdf.addImage(signatureImg, 'PNG', sigX, sigY, sigWidth, sigHeight);
+        pdf.addImage(signatureImg, "PNG", sigX, sigY, sigWidth, sigHeight);
       }
-      
+
       // Add verification details at bottom
       pdf.setFontSize(10);
-      pdf.text('This document has been captured and verified electronically.', 20, 210);
-      pdf.text('Document ID: ' + documentData.id, 20, 220);
-      
+      pdf.text(
+        "This document has been captured and verified electronically.",
+        20,
+        210
+      );
+      pdf.text("Document ID: " + documentData.id, 20, 220);
+
       // Save the PDF
-      const filename = `document_verification_${new Date().toISOString().slice(0, 10)}_${Date.now()}.pdf`;
+      const filename = `document_verification_${new Date()
+        .toISOString()
+        .slice(0, 10)}_${Date.now()}.pdf`;
       pdf.save(filename);
-      
     } catch (error) {
-      console.error('Error generating document PDF:', error);
-      alert('Error generating PDF. Please try again.');
+      console.error("Error generating document PDF:", error);
+      alert("Error generating PDF. Please try again.");
     }
   };
 
   const downloadSinglePhoto = (photo: Photo) => {
-    const link = document.createElement('a');
+    const link = document.createElement("a");
     link.href = photo.url;
     link.download = photo.filename;
-    link.target = '_blank';
+    link.target = "_blank";
     document.body.appendChild(link);
     link.click();
     document.body.removeChild(link);
@@ -452,9 +539,9 @@ export default function PhotoDashboard() {
 
   const printSinglePhoto = (photo: Photo) => {
     // Create a new window for printing
-    const printWindow = window.open('', '_blank');
+    const printWindow = window.open("", "_blank");
     if (!printWindow) {
-      alert('Please allow pop-ups to enable printing');
+      alert("Please allow pop-ups to enable printing");
       return;
     }
 
@@ -547,14 +634,18 @@ export default function PhotoDashboard() {
     <div className="w-full max-w-6xl mx-auto bg-white rounded-lg shadow-lg overflow-hidden">
       <div className="p-4 bg-purple-600 text-white">
         <h2 className="text-xl font-bold">Photo Dashboard</h2>
-        <p className="text-purple-100 text-sm">Real-time photo gallery with PDF export & 2-per-page printing</p>
+        <p className="text-purple-100 text-sm">
+          Real-time photo gallery with PDF export & 2-per-page printing
+        </p>
       </div>
 
       {photos.length === 0 ? (
         <div className="p-8 text-center text-gray-500">
           <div className="text-4xl mb-4">📸</div>
           <p>No photos captured yet</p>
-          <p className="text-sm">Photos will appear here automatically when captured</p>
+          <p className="text-sm">
+            Photos will appear here automatically when captured
+          </p>
         </div>
       ) : (
         <div className="p-4">
@@ -587,6 +678,13 @@ export default function PhotoDashboard() {
               >
                 🖨️ Print 2/Page ({selectedPhotos.size})
               </button>
+              <button
+                onClick={deleteSelectedPhotos}
+                disabled={selectedPhotos.size === 0}
+                className="bg-red-600 hover:bg-red-700 disabled:bg-gray-400 text-white px-4 py-2 rounded text-sm transition-colors"
+              >
+                🗑️ Delete ({selectedPhotos.size})
+              </button>
             </div>
             <div className="text-sm text-gray-600">
               Total: {photos.length} photos
@@ -600,8 +698,8 @@ export default function PhotoDashboard() {
                 key={photo.id}
                 className={`border-2 rounded-lg overflow-hidden transition-all ${
                   selectedPhotos.has(photo.id)
-                    ? 'border-blue-500 bg-blue-50'
-                    : 'border-gray-200 hover:border-gray-300'
+                    ? "border-blue-500 bg-blue-50"
+                    : "border-gray-200 hover:border-gray-300"
                 }`}
               >
                 <div className="relative">
@@ -647,6 +745,12 @@ export default function PhotoDashboard() {
                       className="text-xs bg-orange-600 hover:bg-orange-700 text-white px-2 py-1 rounded transition-colors"
                     >
                       🖨️ Print
+                    </button>
+                    <button
+                      onClick={() => deletePhoto(photo.id)}
+                      className="text-xs bg-red-600 hover:bg-red-700 text-white px-2 py-1 rounded transition-colors"
+                    >
+                      🗑️ Delete
                     </button>
                   </div>
                 </div>
